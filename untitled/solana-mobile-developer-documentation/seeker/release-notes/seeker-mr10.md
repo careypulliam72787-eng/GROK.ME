@@ -1,0 +1,28 @@
+# Seeker MR10
+
+## Version
+
+Global (devices with serial numbers beginning with `SM02G...`): `Seeker.260930.001`
+
+EEA (devices with serial numbers beginning with `SM02E...`): `Seeker.261008.001`
+
+_You can view your Seeker device serial number in “Settings > About phone > Model & hardware”_
+
+## Release notes
+
+🔐 **Security**
+
+* September 2026 Android and vendor security patches
+* Miscellaneous bug fixes
+
+🔑 **Seed Vault**
+
+* Increased transaction size limit to 4,096 bytes to fully support Solana Transaction V1 ([SIMD-0296](https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0296-larger-transactions.md))
+
+📥 **Update Size**
+
+* 191 MB (Global) / 189 MB (EEA)
+
+Code samples on this page are subject to the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
+
+Last modified on October 15, 2026

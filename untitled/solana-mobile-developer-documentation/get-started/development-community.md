@@ -1,0 +1,13 @@
+# Development community
+
+## Discord
+
+Join the [Solana Mobile Discord](https://discord.gg/solanamobile) and grab a **Developer** role in the `#developer` channel. For developer and publisher support ticketing, submit your questions in `#dev-answers` to get a private chat with Solana Mobile staff.
+
+## X
+
+Follow [@SolanaMobile](https://twitter.com/solanamobile) on X for the latest updates.
+
+## YouTube
+
+Subscribe to [Solana Mobile YouTube](https://www.youtube.com/@solanamobile) for tutorials, demos, and announcements.

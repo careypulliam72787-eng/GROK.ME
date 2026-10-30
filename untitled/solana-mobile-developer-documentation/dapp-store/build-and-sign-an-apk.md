@@ -1,0 +1,284 @@
+# Build and Sign an APK
+
+The Solana dApp Store accepts **signed APK** files. This guide covers how to build and sign an APK for your project, regardless of framework.
+
+## Create a signing key
+
+Every app needs its own signing key. For a full understanding of how Android app signing works, see the [official Android documentation](https://developer.android.com/studio/publish/app-signing#certificates-keystores). Generate a keystore for your app:
+
+```bash
+keytool -genkey -v -keystore my-app-name.keystore \
+  -alias my-app-name \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000
+```
+
+Replace `my-app-name` with your app’s name. Store the keystore file and passwords securely — losing them means you cannot update your app. All future updates must be signed with the same key.
+
+{% hint style="warning" %}
+If your app is also published on Google Play, you **must** use a separate signing key for the dApp Store. You cannot reuse the same key for both stores.
+{% endhint %}
+
+<details>
+
+<summary>Publishing multiple apps?</summary>
+
+Each app should have its own signing key. You can keep things organized by storing multiple key aliases in a single keystore file:
+
+```bash
+# First app
+keytool -genkey -v -keystore publisher.keystore -alias my-first-app -keyalg RSA -keysize 2048 -validity 10000
+
+# Second app
+keytool -genkey -v -keystore publisher.keystore -alias my-second-app -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Then reference the appropriate `-alias` when signing each app.
+
+</details>
+
+{% tabs %}
+{% tab title="Expo" %}
+By default, EAS builds an Android App Bundle (`.aab`). The dApp Store requires an APK instead.
+
+For signing, EAS can automatically generate and manage a keystore for you on your first build. Alternatively, you can provide your own keystore created with the [instructions above](build-and-sign-an-apk.md#create-a-signing-key).
+
+{% stepper %}
+{% step %}
+## Configure EAS for APK builds
+
+Add a `dapp-store` build profile to your `eas.json`:
+
+{% code title="eas.json" %}
+```json
+{
+  "build": {
+    "dapp-store": {
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}
+```
+{% endcode %}
+{% endstep %}
+
+{% step %}
+## Build the APK
+
+{% tabs %}
+{% tab title="EAS Cloud" %}
+```bash
+eas build --platform android --profile dapp-store
+```
+
+The build runs on EAS servers. Once finished, download the APK from the link provided.
+{% endtab %}
+
+{% tab title="Local Build" %}
+```bash
+eas build --platform android --profile dapp-store --local
+```
+
+The build runs on your machine. Requires the [Android SDK and NDK](https://docs.expo.dev/get-started/set-up-your-environment/?mode=development-build\&buildEnv=local) installed locally. The APK is output to the project directory.
+{% endtab %}
+{% endtabs %}
+
+On your first build, EAS will prompt you to either generate a new keystore automatically or provide an existing one.
+{% endstep %}
+
+{% step %}
+## Verify the APK
+
+Confirm your APK is properly signed:
+
+```bash
+apksigner verify --print-certs app-release.apk
+```
+{% endstep %}
+{% endstepper %}
+{% endtab %}
+
+{% tab title="Native Android" %}
+{% stepper %}
+{% step %}
+## Configure signing in build.gradle
+
+Add a signing config in your `app/build.gradle`:
+
+{% code title="app/build.gradle" %}
+```groovy
+android {
+    signingConfigs {
+        dappStore {
+            storeFile file("keystores/my-app-name.keystore")
+            storePassword "your_keystore_password"
+            keyAlias "my-app-name"
+            keyPassword "your_key_password"
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.dappStore
+        }
+    }
+}
+```
+{% endcode %}
+{% endstep %}
+
+{% step %}
+## Build the APK
+
+```bash
+./gradlew assembleRelease
+```
+
+Or in Android Studio: **Build** > **Build APK(s)**.
+
+Your signed APK will be at `app/build/outputs/apk/release/app-release.apk`.
+{% endstep %}
+
+{% step %}
+## Verify the APK
+
+Confirm your APK is properly signed:
+
+```bash
+apksigner verify --print-certs app-release.apk
+```
+{% endstep %}
+{% endstepper %}
+{% endtab %}
+
+{% tab title="Web App" %}
+Any web app or website can be published on the dApp Store by wrapping it in an Android WebView shell. The [`solana-mobile webshell`](../solana-mobile-webshell.md) command generates that Android project for you and builds a signed release APK from it.
+
+The generated app is a WebView shell, not a [Trusted Web Activity (TWA)](https://developer.chrome.com/docs/android/trusted-web-activity), so it needs no Digital Asset Links setup. Browsers are rolling out [Local Network Access](https://developer.chrome.com/blog/local-network-access) restrictions that break Mobile Wallet Adapter connections for web apps, including TWA-based wrappers such as Bubblewrap APKs. The shell handles wallet intents natively, so those flows keep working.
+
+### Prerequisites
+
+* Your web app is reachable at a public URL.
+* A JDK 17 or newer and the Android SDK are installed. Run [`solana-mobile doctor`](../solana-mobile-doctor.md) to check.
+* If your web app uses Mobile Wallet Adapter, it is on `@solana-mobile/wallet-standard-mobile` **v0.5.1 or later**, which detects the shell and skips the browser permission flow. See [Local Network Access](../recipes/mobile-wallet-adapter/local-network-access-permission.md).
+
+<details>
+
+<summary>Template: Web Manifest</summary>
+
+A [web manifest](https://developer.mozilla.org/en-US/docs/Web/Manifest) is optional, but when one is available the CLI seeds the app name, icons, and start URL from it. At minimum, a manifest file includes the app’s name, icons, and start URL:
+
+{% code title="manifest.json" %}
+```json
+{
+  "name": "APP_NAME",
+  "short_name": "APP_NAME",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "display": "standalone"
+}
+```
+{% endcode %}
+
+For more information, view the [web manifest documentation](https://web.dev/articles/add-manifest).
+
+</details>
+
+{% stepper %}
+{% step %}
+## Generate the Android project
+
+Point `init` at your site URL:
+
+```bash
+npx solana-mobile@latest webshell init my-app --url https://your-app.com
+```
+
+If your site has a web manifest, point at that instead and the CLI fills in the app name, icons, and start URL for you:
+
+```bash
+npx solana-mobile@latest webshell init my-app --manifest https://your-app.com/manifest.json
+```
+
+Either form prompts for whatever is still missing: application id, app name, version code and name, and the signing keystore. See [`webshell init`](../solana-mobile-webshell.md#webshell-init) for the full list of flags.
+
+Already using Bubblewrap? Pass its `twa-manifest.json` to `--manifest` and the CLI carries over the application id, versions, and signing key, so your existing app updates keep working.
+
+Pass `--keystore-path` to sign with the key you created above. When that path does not exist yet, `init` creates a keystore there instead. Keep the keystore file and its passwords secure — losing them means you cannot update your app.
+{% endstep %}
+
+{% step %}
+## Build the APK
+
+```bash
+npx solana-mobile@latest webshell build my-app
+```
+
+The build prompts for the keystore password. Set `SOLANA_MOBILE_KEYSTORE_PASSWORD` (and `SOLANA_MOBILE_KEY_PASSWORD`, if the key uses a different password) to skip the prompts in CI:
+
+```bash
+export SOLANA_MOBILE_KEYSTORE_PASSWORD='<keystore-password>'
+export SOLANA_MOBILE_KEY_PASSWORD='<key-password>'
+npx solana-mobile@latest webshell build my-app
+```
+
+The signed APK lands at `my-app/app/build/outputs/apk/release/app-release.apk`.
+{% endstep %}
+
+{% step %}
+## Verify the APK
+
+Confirm your APK is properly signed:
+
+```bash
+apksigner verify --print-certs my-app/app/build/outputs/apk/release/app-release.apk
+```
+{% endstep %}
+
+{% step %}
+## Test the APK
+
+Install it on a connected device or emulator and check that your wallet flows work inside the shell:
+
+```bash
+npx solana-mobile@latest device install my-app/app/build/outputs/apk/release/app-release.apk
+```
+{% endstep %}
+{% endstepper %}
+
+### Updating your app
+
+Every dApp Store update needs a higher `versionCode`. Bump `SOLANA_MOBILE_VERSION_CODE` and `SOLANA_MOBILE_VERSION_NAME` in the generated project’s `gradle.properties`, then build again:
+
+```bash
+npx solana-mobile@latest webshell build my-app
+```
+
+Because the shell loads your live site, changes you ship to the web app itself reach users without a new APK.
+{% endtab %}
+{% endtabs %}
+
+## Next steps
+
+With your signed APK ready, follow the dApp Store publishing process:
+
+## Submit your app
+
+Follow the step-by-step guide to submit your APK to the Solana dApp Store.

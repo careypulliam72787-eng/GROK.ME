@@ -1,0 +1,64 @@
+# dApp Publishing CLI
+
+Portal-backed CLI for publishing dApp versions to the Solana dApp Store.
+
+The `dapp-store` CLI publishes new app versions to the Solana dApp Store through the [Publisher Portal](https://publish.solanamobile.com/). Point it at an APK (local file or URL), and the portal handles the rest — matching the package name to your existing app, creating the release, and submitting the on-chain transaction.
+
+## Prerequisites
+
+Before using the CLI, ensure you have:
+
+* An app already created in the [Publisher Portal](https://publish.solanamobile.com/) with its App NFT minted.
+* A release-ready APK signed with your release key.
+* A signer keypair file (Solana CLI keypair).
+* A portal API key (see [Getting an API key](dapp-publishing-cli.md#getting-an-api-key)).
+
+## Installation
+
+```bash
+npm install -g @solana-mobile/dapp-store-cli
+```
+
+## Getting an API key
+
+Generate an API key from the Publisher Portal dashboard: https://publish.solanamobile.com/dashboard/settings/api-keys
+
+Provide the key to the CLI via the `DAPP_STORE_API_KEY` environment variable or through stdin:
+
+```bash
+# Set as environment variable
+export DAPP_STORE_API_KEY=<your-api-key>
+
+# Or pipe from stdin
+printf '%s' "$DAPP_STORE_API_KEY" | dapp-store ...
+```
+
+## Usage
+
+Publish a version by providing an APK, a signer keypair, and a “what’s new” message:
+
+```bash
+# From a local APK file
+dapp-store --apk-file ./your_apk_name.apk --keypair ./path/to/keypair.json --whats-new "Bug fixes and performance improvements"
+
+# From a remote APK URL
+dapp-store --apk-url https://example.com/your_apk_name.apk --keypair ./path/to/keypair.json --whats-new "Bug fixes and performance improvements"
+```
+
+The `--keypair` flag is **required** and must point to a Solana CLI keypair file. The CLI also expects your portal API key to be available via `DAPP_STORE_API_KEY` or stdin.
+
+### App identification
+
+You do not need to specify the app you are publishing. The portal reads the Android package name (e.g. `com.example.myapp`) from the APK and matches it to the correct app under your publisher account.
+
+## CI/CD Integration
+
+The CLI is designed for use in automated pipelines. Set `DAPP_STORE_API_KEY` as a secret in your CI environment and provide the signer keypair file via `--keypair`:
+
+```bash
+export DAPP_STORE_API_KEY=${{ secrets.DAPP_STORE_API_KEY }}
+dapp-store \
+  --apk-file ./app/build/outputs/apk/release/app-release.apk \
+  --keypair ./path/to/keypair.json \
+  --whats-new "Release v1.2.0"
+```

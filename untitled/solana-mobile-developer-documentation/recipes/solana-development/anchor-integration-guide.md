@@ -1,0 +1,310 @@
+# Anchor Integration Guide
+
+Connect an Anchor program to a mobile app using a generated client, starting from the expo-kit-anchor template.
+
+## What you will learn
+
+* How an Anchor program, its IDL, and a generated client fit together
+* How to read program accounts and send instructions from a mobile app
+* How to regenerate the client after changing your program
+* How to deploy your own program and point the app at it
+
+## Prerequisites
+
+* A working [Anchor toolchain](https://www.anchor-lang.com/docs/installation)
+* [Development setup](../../get-started/development-setup.md) for running Android apps
+* Familiarity with Anchor programs, accounts, and PDAs
+
+## Create the project
+
+The `expo-kit-anchor` template ships an Expo app and an Anchor program in one project, already wired together.
+
+{% stepper %}
+{% step %}
+### Generate the app
+
+```bash
+npx solana-mobile@latest create anchor-demo
+```
+
+Select the **expo-kit-anchor** template when prompted.
+{% endstep %}
+
+{% step %}
+### Run it
+
+```bash
+cd anchor-demo
+npm run android
+```
+
+The app connects to a `hello_world` counter program already deployed on devnet. Connect a wallet, initialize a counter, and increment it before changing anything — that confirms your toolchain works end to end.
+{% endstep %}
+{% endstepper %}
+
+## How the pieces fit together
+
+Everything after the program is generated:
+
+```
+anchor program  →  IDL  →  Codama  →  TypeScript client  →  app
+```
+
+You write the program. Building it writes the IDL. Codama reads the IDL and generates a typed client. The app imports that client. When the program changes, you rebuild and regenerate, and the instructions and types the app uses always match what the program declares.
+
+The IDL is the contract between the two sides. You never hand-write the client — every account fetcher and instruction builder the app calls is generated from it.
+
+## The Anchor program
+
+The program lives in `anchor/programs/hello_world/src/`. Its entrypoint declares the program address and the instructions:
+
+```rust
+// lib.rs
+declare_id!("BneHHhN7nSXgjZytQWLsi1TRY7xMz83FxpkKgoCb1n2d");
+
+#[program]
+pub mod hello_world {
+    use super::*;
+
+    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+        crate::instructions::initialize::handle_initialize(ctx)
+    }
+
+    pub fn increment(ctx: Context<Increment>) -> Result<()> {
+        crate::instructions::increment::handle_increment(ctx)
+    }
+}
+```
+
+`state.rs` defines the account the program stores data in:
+
+```rust
+#[account]
+#[derive(InitSpace)]
+pub struct Counter {
+    pub count: u64,
+    pub authority: Pubkey,
+}
+```
+
+Each wallet gets its own counter, at a PDA derived from the program address and the wallet:
+
+```rust
+// instructions/initialize.rs
+#[account(
+    init,
+    payer = payer,
+    space = 8 + Counter::INIT_SPACE,
+    seeds = [COUNTER_SEED, payer.key().as_ref()],
+    bump
+)]
+pub counter: Account<'info, Counter>,
+```
+
+Because the address is derived, the app can always find a wallet’s counter without storing the address anywhere.
+
+## Generating the client
+
+`anchor/codama.mjs` points Codama at the IDL and tells it where to write the client:
+
+```javascript
+export default {
+  idl: "target/idl/hello_world.json",
+  scripts: {
+    js: {
+      from: "@codama/renderers-js",
+      args: [
+        "anchor/src/client/js",
+        {
+          generatedFolder: "generated",
+          kitImportStrategy: "rootOnly",
+          syncPackageJson: false,
+        },
+      ],
+    },
+  },
+};
+```
+
+Regenerate with:
+
+```bash
+npm run codama:js
+```
+
+The generated code is re-exported from `anchor/src/index.ts`, and `tsconfig.json` maps that directory to `@project/anchor`, so the app imports from one place rather than reaching into generated files:
+
+```json
+"paths": {
+  "@project/anchor": ["./anchor/src"]
+}
+```
+
+## Reading program accounts
+
+`findCounterPda` and `fetchMaybeCounter` are both generated. The hook derives the PDA for the connected wallet and fetches the account, which may not exist yet:
+
+```typescript
+// src/features/counter/data-access/use-counter-query.ts
+import { fetchMaybeCounter, findCounterPda } from "@project/anchor";
+import { useQuery } from "@tanstack/react-query";
+import { useMobileWallet } from "@wallet-ui/react-native-kit";
+
+export function useCounterQuery() {
+  const { account, chain, client } = useMobileWallet();
+
+  return useQuery({
+    enabled: !!account,
+    queryKey: ["counter", chain, account?.address],
+    queryFn: async () => {
+      if (!account) {
+        return null;
+      }
+      const [counterAddress] = await findCounterPda({
+        authority: account.address,
+      });
+      const counter = await fetchMaybeCounter(client.rpc, counterAddress);
+      return {
+        address: counterAddress,
+        count: counter.exists ? counter.data.count : null,
+      };
+    },
+  });
+}
+```
+
+`fetchMaybeCounter` returns a result with an `exists` flag rather than throwing, which is what lets the UI distinguish “not initialized” from a counter at zero.
+
+## Sending instructions
+
+Instruction builders are generated too — `getInitializeInstructionAsync` and `getIncrementInstructionAsync`. The hook builds a transaction message with `@solana/kit` and hands it to the wallet through Mobile Wallet Adapter:
+
+```typescript
+// src/features/counter/data-access/use-counter-program.ts
+const {
+  context: { slot: minContextSlot },
+  value: latestBlockhash,
+} = await client.rpc.getLatestBlockhash().send();
+
+const signer = getTransactionSigner(account.address, minContextSlot);
+const instruction = await createInstruction(signer);
+
+const message = pipe(
+  createTransactionMessage({ version: 0 }),
+  (message) => setTransactionMessageFeePayerSigner(signer, message),
+  (message) =>
+    setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, message),
+  (message) => appendTransactionMessageInstruction(instruction, message),
+);
+assertIsTransactionMessageWithSingleSendingSigner(message);
+
+const signatureBytes = await signAndSendTransactionMessageWithSigners(message);
+```
+
+The wallet’s sending signer must be the only signer in the transaction. Use the same signer instance as fee payer and pass it to the instruction builder, which is why `getTransactionSigner` is called once and reused above.
+
+Each instruction is exposed as a mutation, so the UI gets pending and error state for free:
+
+```typescript
+return {
+  incrementMutation: useMutation({
+    mutationFn: () =>
+      sendInstruction((authority) =>
+        getIncrementInstructionAsync({ authority }),
+      ),
+    onSettled,
+  }),
+  initializeMutation: useMutation({
+    mutationFn: () =>
+      sendInstruction((payer) => getInitializeInstructionAsync({ payer })),
+    onSettled,
+  }),
+};
+```
+
+Because the wallet submits the transaction rather than the app, the hook polls for confirmation afterwards and invalidates the counter query on settle — including on failure, since the wallet may have submitted after the app stopped waiting.
+
+## Changing the program
+
+Add an instruction to the program, then rebuild and regenerate:
+
+```bash
+npm run anchor:build
+npm run codama:js
+```
+
+The new instruction appears in the IDL, the generated client picks up a builder for it, and the app can call it. Add a mutation alongside the existing ones and wire it to the UI.
+
+## Deploying your own program
+
+The template points at a program someone else deployed, so you can run the app before you have a program of your own. To change program behavior you need your own deployment.
+
+{% stepper %}
+{% step %}
+### Take ownership of the program
+
+```bash
+npm run anchor:setup
+```
+
+This generates a program keypair, writes the new address into `lib.rs` and `Anchor.toml`, rebuilds the program, and reruns Codama — so the address changes everywhere at once.
+{% endstep %}
+
+{% step %}
+### Fund the deploying wallet
+
+Deploying costs SOL. Check the wallet paying for it:
+
+```bash
+solana address && solana balance --url devnet
+```
+
+If it has no SOL, fund it at the [Solana Faucet](https://faucet.solana.com/).
+{% endstep %}
+
+{% step %}
+### Deploy
+
+```bash
+npm run anchor:deploy:devnet
+```
+
+After deploying to a new address the app shows **not initialized** again. The counter PDA is derived from the program address, so a new program means a new counter.
+
+For local development, `npm run anchor:localnet` runs a validator and `npm run anchor:deploy:localnet` deploys against it.
+{% endstep %}
+{% endstepper %}
+
+## Common issues
+
+<details>
+
+<summary><strong>“Attempt to debit an account but found no record of a prior credit” on deploy</strong></summary>
+
+The deploying wallet has never held SOL. Fund the address from `solana address` at the faucet.
+
+</details>
+
+<details>
+
+<summary><strong>“Invalid instruction data” or an unknown instruction</strong></summary>
+
+The client is out of step with the program. Run `npm run anchor:build` then `npm run codama:js`.
+
+</details>
+
+<details>
+
+<summary><strong>“Account does not exist”</strong></summary>
+
+The PDA has not been initialized for this wallet, or the program address changed and the derived address moved with it.
+
+</details>
+
+<details>
+
+<summary><strong>Types not resolving from <code>@project/anchor</code></strong></summary>
+
+The client has not been generated yet. Run `npm run codama:js`, which writes into `anchor/src/client/js`.
+
+</details>

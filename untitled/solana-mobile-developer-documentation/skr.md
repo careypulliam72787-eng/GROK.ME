@@ -1,0 +1,40 @@
+# SKR
+
+SKR is the native asset of the Solana Mobile ecosystem. It distributes control, powers curation, and aligns incentives across builders, users, and hardware partners. Via SKR, the community governs, builders keep what they earn, and users own a stake in the value they create.
+
+## Token details
+
+* **Mint address**: `SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3`
+* **Token type**: SPL Token
+
+## Staking
+
+SKR holders can stake their tokens to participate in the ecosystem. Stakers delegate their stake to a **Guardian**.
+
+## SKR Staking Portal
+
+Stake your SKR tokens.
+
+### Inflation
+
+* Inflation starts at **10%** and decays **25% per year** until reaching a **2% terminal rate**.
+* Inflation is linear (not compounding).
+
+### Epochs & cooldown
+
+* Staking epochs are **2 days**.
+* Unstaking is immediate and tokens stop earning rewards right away.
+* There is a **48-hour cooldown** to withdraw after unstaking.
+
+### Program addresses
+
+| Component                   | Address                                        |
+| --------------------------- | ---------------------------------------------- |
+| Staking Program             | `SKRskrmtL83pcL4YqLWt6iPefDqwXQWHSw9S9vz94BZ`  |
+| Stake Config                | `4HQy82s9CHTv1GsYKnANHMiHfhcqesYkK6sB3RDSYyqw` |
+| Stake Vault                 | `8isViKbwhuhFhsv2t8vaFL74pKCqaFPQXo1KkeQwZbB8` |
+| Solana Mobile Guardian Pool | `DPJ58trLsF9yPrBa2pk6UaRkvqW8hWUYjawe788WBuqr` |
+
+## SKR White Paper
+
+Read the full SKR white paper.

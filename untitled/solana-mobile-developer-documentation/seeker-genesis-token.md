@@ -1,0 +1,65 @@
+# Seeker Genesis Token
+
+The Seeker Genesis Token is a unique NFT that represents a verified owner of a [Seeker](solana-mobile-stack/seeker.md) device. It can only be minted once per device and is minted into the primary account in a user’s [Seed Vault Wallet](solana-mobile-stack/seed-vault.md).
+
+## NFT Details
+
+The Seeker Genesis Token implements Token Extensions (formerly Token-2022).
+
+### Transferability
+
+The Seeker Genesis Token can only be transferred between a user’s wallet accounts on a permissioned basis within the Seed Vault Wallet. A transfer occurs when a user changes their primary account in the Seed Vault Wallet. The **mint address** of the SGT remains the same when it is transferred.
+
+#### Anti-Sybil Example: In-App Rewards Claim
+
+Even with transferability, the Seeker Genesis Token is still useful as an anti-sybil measure. As an example, imagine an in-app rewards claim that wants to use the Seeker Genesis Token to limit the claim to once per Seeker device. To implement this, the app should check for 3 properties:
+
+1. The connected wallet owns a Seeker Genesis Token.
+2. The user proves ownership of the wallet via [signing a message](https://github.com/phantom/sign-in-with-solana?tab=readme-ov-file#dapp-integration).
+3. The Seeker Genesis Token has not been previously used to claim a reward (i.e check that its **mint address** has not been seen before).
+
+Step 3 is crucial to exclude wallets that have previously claimed the reward on another wallet (and then transferred the SGT to a new wallet).
+
+### Token Extensions
+
+Seeker Genesis Token implements several extensions, notably:
+
+* Metadata Pointer
+* Token Group Member and Pointer
+
+### Key Addresses
+
+* **Metadata Address**: `GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te`
+* **Group Address**: `GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te`
+
+#### View on an Explorer
+
+* An individual [Seeker Genesis Token](https://explorer.solana.com/address/5mXbkqKz883aufhAsx3p5Z1NcvD2ppZbdTTznM6oUKLj/token-extensions) and its extensions
+* Seeker Genesis Token [Metadata Account](https://explorer.solana.com/address/GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te/)
+
+## Verifying Seeker Genesis Token Ownership
+
+Use the [`@solana-mobile/skr-genesis-token`](https://www.npmjs.com/package/@solana-mobile/skr-genesis-token) package to check whether a wallet holds a Seeker Genesis Token. It verifies each token by its on-chain group membership and works with any mainnet RPC endpoint.
+
+```bash
+npm install @solana-mobile/skr-genesis-token @solana/kit
+```
+
+The [Anti-Sybil Example](seeker-genesis-token.md#anti-sybil-example-in-app-rewards-claim) above requires recording each SGT’s mint address, so use `getSeekerGenesisTokens` to get the mints rather than a boolean. A wallet can hold more than one SGT, so keep every mint: if one has already claimed, another may not have. It skips token accounts with a zero balance, which a wallet keeps after transferring its SGT out.
+
+```typescript
+import { getSeekerGenesisTokens } from "@solana-mobile/skr-genesis-token";
+import { address, createSolanaRpc } from "@solana/kit";
+
+const rpc = createSolanaRpc(process.env.RPC_URL); // any mainnet RPC endpoint
+
+// Returns the mint address of every SGT the wallet currently holds, or [].
+async function getWalletSGTMints(walletAddress: string) {
+  const tokens = await getSeekerGenesisTokens(rpc, address(walletAddress));
+  return tokens.map((token) => token.mint);
+}
+```
+
+For a simple yes/no check, use `hasSeekerGenesisToken`. To verify a single mint, use `isSeekerGenesisToken`. See the [package README](https://github.com/solana-mobile/skr-js/tree/main/packages/skr-genesis-token#readme) for the full API.
+
+Code samples on this page are subject to the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).

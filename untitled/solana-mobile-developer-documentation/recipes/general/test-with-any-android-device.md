@@ -1,0 +1,26 @@
+# Test with any Android device
+
+Seeker is an Android phone at its core. For 99% of development and testing, you can use:
+
+* Any Android device
+* Android emulator from Android Studio
+* Any standard Android API
+
+Your app will behave the same way on Seeker as it does on any other Android device.
+
+## Mock MWA Wallet
+
+If your app uses Mobile Wallet Adapter, we recommend testing against the [Mock MWA Wallet](https://github.com/solana-mobile/mock-mwa-wallet) - a testing wallet that simulates Seed Vault Wallet functionality. Mock MWA Wallet features:
+
+* Mobile Wallet Adapter support for `authorize`, `signIn`, `signAndSendTransactions`, and `signMessage`.
+* Apple pay-like transaction signing (Bottom sheet approval, no app switch)
+* Biometric authentication
+* Configurable Ed25519 private key importing
+
+{% hint style="warning" %}
+Mock MWA Wallet requires a secure lock screen. Set up a PIN, pattern, or biometric on the device or emulator first — the wallet keeps its key material behind device authentication and will fail without one.
+{% endhint %}
+
+For installation, view the [**Github repository**](https://github.com/solana-mobile/mock-mwa-wallet).
+
+_Mock MWA Wallet_

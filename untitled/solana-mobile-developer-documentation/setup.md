@@ -1,0 +1,166 @@
+# Setup
+
+Set up `MobileWalletProvider` and the `useMobileWallet` hook in your app.
+
+## MobileWalletProvider
+
+Wrap your app’s root component with `MobileWalletProvider`. This provider manages the wallet connection state and exposes the `useMobileWallet` hook to all child components.
+
+{% tabs %}
+{% tab title="@solana/kit" %}
+```tsx
+import {
+  createSolanaDevnet,
+  MobileWalletProvider,
+} from "@wallet-ui/react-native-kit";
+
+const cluster = createSolanaDevnet({ url: "https://api.devnet.solana.com" });
+const identity = {
+  name: "My Solana App",
+  uri: "https://mysolanaapp.com",
+  icon: "favicon.png",
+};
+
+export default function App() {
+  return (
+    <MobileWalletProvider cluster={cluster} identity={identity}>
+      {/* Your app content */}
+    </MobileWalletProvider>
+  );
+}
+```
+
+### Props
+
+| Prop           | Type            | Description                                                         |
+| -------------- | --------------- | ------------------------------------------------------------------- |
+| `cache`        | `Cache`         | Optional. Custom authorization cache. Defaults to `AsyncStorage`.   |
+| `cluster`      | `SolanaCluster` | The cluster to connect to. Build one with a `createSolana*` helper. |
+| `createClient` | `function`      | Optional. Return your own RPC client instead of the default one.    |
+| `identity`     | `AppIdentity`   | Your app’s identity shown to the user during wallet authorization.  |
+
+### Cluster helpers
+
+`@wallet-ui/react-native-kit` re-exports a helper per cluster. Each accepts an optional `url` (and `label`, `urlWs`), except `createSolanaMainnet`, which requires a `url` because there is no default public mainnet endpoint.
+
+| Helper                   | Cluster ID        |
+| ------------------------ | ----------------- |
+| `createSolanaDevnet()`   | `solana:devnet`   |
+| `createSolanaLocalnet()` | `solana:localnet` |
+| `createSolanaMainnet()`  | `solana:mainnet`  |
+| `createSolanaTestnet()`  | `solana:testnet`  |
+{% endtab %}
+
+{% tab title="@solana/web3.js" %}
+```tsx
+import { MobileWalletProvider } from "@wallet-ui/react-native-web3js";
+import { clusterApiUrl } from "@solana/web3.js";
+
+const chain = "solana:devnet";
+const endpoint = clusterApiUrl("devnet");
+const identity = {
+  name: "My Solana App",
+  uri: "https://mysolanaapp.com",
+  icon: "favicon.png",
+};
+
+export default function App() {
+  return (
+    <MobileWalletProvider chain={chain} endpoint={endpoint} identity={identity}>
+      {/* Your app content */}
+    </MobileWalletProvider>
+  );
+}
+```
+
+### Props
+
+| Prop                 | Type                             | Description                                                             |
+| -------------------- | -------------------------------- | ----------------------------------------------------------------------- |
+| `cache`              | `Cache`                          | Optional. Custom authorization cache. Defaults to `AsyncStorage`.       |
+| `chain`              | `string`                         | The cluster to connect to (e.g. `'solana:devnet'`, `'solana:mainnet'`). |
+| `commitmentOrConfig` | `Commitment \| ConnectionConfig` | Optional. Passed through to the underlying `Connection`.                |
+| `endpoint`           | `string`                         | The RPC endpoint URL for the cluster.                                   |
+| `identity`           | `AppIdentity`                    | Your app’s identity shown to the user during wallet authorization.      |
+{% endtab %}
+{% endtabs %}
+
+### Identity object
+
+Every field is optional in the protocol, but set `name` and an absolute `uri`. Wallets verify your app by checking the Digital Asset Links file on the `uri` domain against your app signing key, and the [MWA spec](https://solana-mobile.github.io/mobile-wallet-adapter/spec/spec.html#dapp-identity-verification) recommends a wallet decline authorization when `identity` carries no `uri`. A relative `icon` also resolves against `uri`.
+
+| Field  | Type     | Description                                               |
+| ------ | -------- | --------------------------------------------------------- |
+| `icon` | `string` | Your app icon, as a path relative to `uri` or a data URI. |
+| `name` | `string` | Your app’s display name.                                  |
+| `uri`  | `string` | Your app’s website URL.                                   |
+
+The MWA spec accepts two forms for `icon`: a path relative to `uri`, or a `data:` URI holding a base64-encoded SVG, WebP, PNG, or GIF. An absolute HTTP(S) URL is neither, and wallets may reject the authorization request. Note that the Kotlin client library is stricter still and accepts only the relative path.
+
+## useMobileWallet hook
+
+Inside any component wrapped by `MobileWalletProvider`, use the `useMobileWallet` hook to access wallet functionality:
+
+{% tabs %}
+{% tab title="@solana/kit" %}
+```tsx
+import { useMobileWallet } from "@wallet-ui/react-native-kit";
+
+function MyComponent() {
+  const {
+    account,          // The selected wallet account (undefined if disconnected)
+    accounts,         // Every authorized account
+    chain,            // The connected cluster ID, e.g. 'solana:devnet'
+    client,           // { rpc, rpcSubscriptions } built from @solana/kit
+    connect,          // Connect to a wallet
+    disconnect,       // Disconnect from the wallet
+    identity,         // The AppIdentity passed to the provider
+    sendTransactions, // Build, sign, and send from an Instruction[]
+    signIn,           // Sign in with Solana (SIWS)
+    signMessages,     // Sign one or more messages
+  } = useMobileWallet();
+
+  return (
+    // Your component UI
+  );
+}
+```
+
+`account.address` is a kit `Address` — a branded string, so it needs no conversion before you pass it to an RPC call or an instruction builder.
+{% endtab %}
+
+{% tab title="@solana/web3.js" %}
+```tsx
+import { useMobileWallet } from "@wallet-ui/react-native-web3js";
+
+function MyComponent() {
+  const {
+    account,                 // The selected wallet account (undefined if disconnected)
+    accounts,                // Every authorized account
+    chain,                   // The connected cluster ID, e.g. 'solana:devnet'
+    connect,                 // Connect to a wallet
+    connection,              // The Solana RPC Connection instance
+    disconnect,              // Disconnect from the wallet
+    identity,                // The AppIdentity passed to the provider
+    signAndSendTransactions, // Sign and send one or more transactions
+    signIn,                  // Sign in with Solana (SIWS)
+    signMessages,            // Sign one or more messages
+  } = useMobileWallet();
+
+  return (
+    // Your component UI
+  );
+}
+```
+
+`account.address` is a `PublicKey`, so call `.toString()` before displaying it. `account.publicKey` is available as an alias.
+{% endtab %}
+{% endtabs %}
+
+Every signing method also has a singular alias — `signMessage`, `signTransaction`, `signAndSendTransaction` — with the same signature. The plural names are used throughout these docs and in the templates.
+
+## Next steps
+
+## Quickstart
+
+See usage examples for all `useMobileWallet` hook methods.

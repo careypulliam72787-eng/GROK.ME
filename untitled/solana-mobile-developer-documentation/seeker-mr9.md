@@ -1,0 +1,23 @@
+# Seeker MR9
+
+## Version
+
+Global (devices with serial numbers beginning with `SM02G...`): `Seeker.260812.001`
+
+EEA (devices with serial numbers beginning with `SM02E...`): `Seeker.260811.001`
+
+_You can view your Seeker device serial number in “Settings > About phone > Model & hardware”_
+
+## Release notes
+
+🔐 **Security**
+
+* August 2026 Android and vendor security patches
+
+🛠️ **System & Performance**
+
+* Fix to improve HDR10 video color fidelity
+
+📥 **Update Size**
+
+* 25.13 MB (Global) / 28.73 MB (EEA)

@@ -1,0 +1,298 @@
+# Detecting Seeker Users
+
+Identify Seeker users in your app, from a lightweight device check to on-chain ownership verification.
+
+## Overview
+
+There are two main approaches to detect Seeker users:
+
+1. **Platform Constants Check**: A lightweight client-side check using React Native’s Platform API
+2. **Seeker Genesis Token Verification**: A secure on-chain verification method
+
+## Method 1- Platform Constants Check
+
+The Platform Constants method checks device information using React Native’s built-in [Platform API](https://reactnative.dev/docs/platform). This is a quick, lightweight check suitable for UI treatments and non-critical features.
+
+{% hint style="warning" %}
+The Platform Constants API can be spoofed and should **not** be used for use cases where you need a guaranteed Seeker user.
+
+For use cases where you need a guarantee that you are interacting with a Seeker user, see [Method 2: Seeker Genesis Token Verification](detecting-seeker-users.md#method-2-seeker-genesis-token-verification) instead.
+{% endhint %}
+
+### Checking Platform Constants
+
+```javascript
+import { Platform } from "react-native";
+
+console.log(JSON.stringify(Platform.constants, null, 2));
+```
+
+When running on a Seeker device, the above code outputs something like:
+
+```json
+{
+  "uiMode": "normal",
+  "reactNativeVersion": {
+    "minor": 79,
+    "prerelease": null,
+    "major": 0,
+    "patch": 5
+  },
+  "isTesting": false,
+  "ServerHost": "localhost:8081",
+  "Brand": "solanamobile",
+  "Manufacturer": "Solana Mobile Inc.",
+  "Release": "15",
+  "Fingerprint": "solanamobile/seeker/seeker:15/AP3A.250103.524.A2/mp1V912:userdebug/release-keys",
+  "Serial": "unknown",
+  "Model": "Seeker",
+  "Version": 35
+}
+```
+
+To check if the user is on a Seeker, you can check the `Model` constant:
+
+```typescript
+const isSeekerDevice = (): boolean => {
+  return Platform.constants.Model === "Seeker";
+};
+```
+
+### Use Cases
+
+* **UI Treatments**: Show special welcome messages, themes, or layouts for Seeker users
+* **Feature Flags**: Enable/disable certain features based on device type
+* **Analytics**: Track usage patterns by device type
+* **Marketing**: Display device-specific promotional content
+
+### Limitations
+
+{% hint style="warning" %}
+**The main limitation is that this method is spoofable** — rooted devices or modified apps can change the Platform constants to mimic a Seeker device. See the next method for a guaranteed way to check for interaction with a Seeker user.
+{% endhint %}
+
+## Method 2 - Seeker Genesis Token Verification
+
+For use cases where you need a guarantee that you are interacting with a Seeker user, verify that the user’s wallet contains the Seeker Genesis Token (SGT). The SGT is a unique NFT that is minted to a user’s wallet only _once_ per Seeker device. Owning an SGT represents verified ownership of a Seeker device. Learn more about the [Seeker Genesis Token](../../seeker-genesis-token.md).
+
+### Genesis Token Verification Process
+
+The verification process has **two main steps**:
+
+{% stepper %}
+{% step %}
+#### SIWS to prove wallet ownership
+
+Use Sign-in-with-Solana to prove the user owns the wallet.
+{% endstep %}
+
+{% step %}
+#### Check the wallet contains an SGT
+
+Once wallet ownership is proven, verify that the wallet contains a Seeker Genesis Token.
+{% endstep %}
+{% endstepper %}
+
+### Step 1 - Prove Wallet Ownership with SIWS
+
+**Server-side: Issue the sign-in payload**
+
+Generate the SIWS payload on your backend so you control the `nonce`, `issuedAt`, and `expirationTime` fields. The nonce must be single-use and short-lived — without it, a captured `signInResult` can be replayed to authenticate forever:
+
+```javascript
+// This happens on your backend server
+import crypto from "crypto";
+
+async function createSignInPayload() {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const issuedAt = new Date();
+  const expirationTime = new Date(issuedAt.getTime() + 10 * 60 * 1000); // 10 minutes
+
+  const signInPayload = {
+    domain: "yourdapp.com",
+    statement: "Sign in to verify Seeker ownership",
+    uri: "https://yourdapp.com",
+    nonce,
+    issuedAt: issuedAt.toISOString(),
+    expirationTime: expirationTime.toISOString(),
+  };
+
+  // Store the issued payload, keyed by nonce, so verification can later
+  // load it from your own store instead of trusting a client-supplied copy.
+  await storeSignInPayload(nonce, signInPayload, expirationTime);
+
+  return signInPayload;
+}
+```
+
+**Client-side: Sign the SIWS Payload**
+
+Fetch the payload from your backend, then use Mobile Wallet Adapter to request the user to sign it:
+
+```javascript
+import { transact } from "@solana-mobile/mobile-wallet-adapter-protocol-kit";
+
+const APP_IDENTITY = {
+  name: "Your dApp",
+  uri: "https://yourdapp.com",
+  icon: "favicon.ico",
+};
+
+async function signSIWSPayload() {
+  // Request a fresh sign-in payload from your backend
+  const response = await fetch("https://yourdapp.com/api/siws-payload");
+  const signInPayload = await response.json();
+
+  const signInResult = await transact(async (wallet) => {
+    const authorizationResult = await wallet.authorize({
+      chain: "solana:mainnet",
+      identity: APP_IDENTITY,
+      sign_in_payload: signInPayload,
+    });
+
+    return authorizationResult.sign_in_result;
+  });
+
+  // Send this back to your backend for verification, along with the
+  // payload's nonce so the backend can look up the payload it issued
+  return { nonce: signInPayload.nonce, signInResult };
+}
+```
+
+This flow only authorizes and signs, so it uses no Solana library primitives. Apps on `@solana/web3.js` can import `transact` from `@solana-mobile/mobile-wallet-adapter-protocol-web3js` instead — the rest of the code is unchanged.
+
+**Server-side: Verify the SIWS signature**
+
+The `signInResult` from the MWA response needs to be verified on your backend server. Verification must check three things:
+
+1. The `nonce` is one you issued, has not expired, and has not been used before — load the payload you stored for it rather than trusting a client-supplied copy.
+2. The signature is valid for the issued payload.
+3. The payload’s `domain` is your domain — a signature obtained by a different dApp must not verify.
+
+On success, `verifySIWS` returns the verified wallet address:
+
+```typescript
+// This happens on your backend server
+import { verifySignIn } from "@solana/wallet-standard-util";
+import { getAddressDecoder } from "@solana/kit";
+
+const EXPECTED_DOMAIN = "yourdapp.com";
+
+async function verifySIWS(nonce, signInResult): Promise<string | null> {
+  // A wallet that doesn't support SIWS omits `sign_in_result`, so validate
+  // the input shape before consuming the nonce.
+  if (
+    !signInResult?.address ||
+    !signInResult.signature ||
+    !signInResult.signed_message
+  ) {
+    return null;
+  }
+
+  // 1. Load the payload you issued for this nonce. consumeSignInPayload
+  // should atomically mark the nonce as used and return null if the nonce
+  // is unknown, expired, or already used.
+  const signInPayload = await consumeSignInPayload(nonce);
+  if (!signInPayload) {
+    return null;
+  }
+
+  // The MWA `sign_in_result` contains base64-encoded `address`,
+  // `signed_message`, and `signature` fields. Convert it into the
+  // SolanaSignInOutput shape that `verifySignIn` expects.
+  const publicKey = new Uint8Array(Buffer.from(signInResult.address, "base64"));
+  if (publicKey.length !== 32) {
+    return null;
+  }
+  const walletAddress = getAddressDecoder().decode(publicKey);
+  const serialisedOutput = {
+    account: {
+      address: walletAddress,
+      publicKey,
+    },
+    signature: new Uint8Array(Buffer.from(signInResult.signature, "base64")),
+    signedMessage: new Uint8Array(
+      Buffer.from(signInResult.signed_message, "base64"),
+    ),
+  };
+
+  // 2. Verify the signature against the issued payload
+  if (!verifySignIn(signInPayload, serialisedOutput)) {
+    return null;
+  }
+
+  // 3. The payload must be bound to your domain
+  if (signInPayload.domain !== EXPECTED_DOMAIN) {
+    return null;
+  }
+
+  return walletAddress;
+}
+```
+
+For complete SIWS verification details, see the [Phantom SIWS spec](https://github.com/phantom/sign-in-with-solana).
+
+### Step 2 - Check SGT Ownership
+
+**Server-side: Query an RPC to verify SGT ownership**
+
+On your backend, use the [`@solana-mobile/skr-genesis-token`](https://www.npmjs.com/package/@solana-mobile/skr-genesis-token) package to check if the user’s wallet contains a Seeker Genesis Token:
+
+```bash
+npm install @solana-mobile/skr-genesis-token @solana/kit
+```
+
+```typescript
+// This happens on your backend server
+import { getSeekerGenesisTokens } from "@solana-mobile/skr-genesis-token";
+import { address, createSolanaRpc } from "@solana/kit";
+
+const rpc = createSolanaRpc(process.env.RPC_URL); // any mainnet RPC endpoint
+
+// Returns the mint address of every SGT the wallet currently holds, or [].
+async function getWalletSGTMints(walletAddress: string) {
+  const tokens = await getSeekerGenesisTokens(rpc, address(walletAddress));
+  return tokens.map((token) => token.mint);
+}
+```
+
+See [Verifying Seeker Genesis Token Ownership](../../seeker-genesis-token.md#verifying-seeker-genesis-token-ownership) for more.
+
+### Step 3 - Combine SIWS Verification and SGT Check
+
+On your backend server, combine the SIWS verification and SGT ownership check together to confirm the user is a verified Seeker owner. The function returns the mint address of an SGT that has not claimed yet, so you can record it for uniqueness checks (see the warning below), or `null` if verification fails. A wallet can hold more than one SGT, so it checks every mint rather than only the first. RPC errors are thrown, not returned as `null`, so handle them separately from a failed check:
+
+```javascript
+// On your backend server
+async function verifySeekerUser(nonce, signInResult) {
+  // Verify nonce, signature, and domain, and get the verified wallet address
+  const walletAddress = await verifySIWS(nonce, signInResult);
+  if (!walletAddress) {
+    return null;
+  }
+
+  // Pick a held SGT whose mint has not claimed yet. Record that mint
+  // when the claim succeeds to enforce uniqueness across transfers.
+  const mints = await getWalletSGTMints(walletAddress);
+  for (const mint of mints) {
+    if (!(await hasMintClaimed(mint))) {
+      return mint;
+    }
+  }
+  return null;
+}
+```
+
+### Use Cases
+
+{% hint style="warning" %}
+SGTs are transferrable between a user’s wallet, so you must verify uniqueness by checking the SGT’s unique mint address.
+
+For full details and best practices, see the [Transferability](../../seeker-genesis-token.md#transferability) documentation.
+{% endhint %}
+
+* **Gated Content**: Restrict certain features or content to verified Seeker users.
+* **Rewards Programs**: Distribute exclusive rewards to Seeker owners.
+* **Anti-Sybil Measures**: Prevent multiple claims or actions per device.
+
+Code samples on this page are subject to the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
